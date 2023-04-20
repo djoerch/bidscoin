@@ -1,0 +1,66 @@
+Bootstrap: docker
+From: python:3.10-slim
+Stage: builder
+
+%post
+    # Install the latest dcm2niix release from the base repository (= typically outdated)
+    # apt-get update && apt-get -y install dcm2niix
+
+    # Install the latest dcm2niix from sources
+    apt-get update && apt-get -y install git build-essential cmake
+    git clone https://github.com/rordenlab/dcm2niix.git
+    cd dcm2niix; mkdir build && cd build
+    cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
+    make install
+
+
+Bootstrap: docker
+From: python:3.10-slim
+Stage: final
+
+%help
+    This BIDScoin Apptainer image includes:
+
+    * Debian stable,
+    * the latest version of dcm2niix (https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage)
+    * the latest stable release of BIDScoin and its plugins. The general form to run BIDScoin commands is:
+
+        apptainer exec bidscoin.sif <bidscoin_tool> <bidscoin_tool_args>
+
+    For more information run:
+
+        apptainer run bidscoin.sif
+
+    The current image does not include this (non-free) software needed for some bidsapps:
+
+    * FSL (needed for `deface` and `slicereport`)
+    * Freesurfer/synthstrip (needed for `skullstrip`)
+
+    NB: 1) To run GUI applications (such as the bidseditor) you probably need to run `xhost +` first
+        2) In the commands above, Singularity users should replace `apptainer` with `singularity`
+
+%files from builder
+    # Install dcm2niix
+    /usr/local/bin/dcm2niix /usr/local/bin/dcm2niix
+
+%environment
+    export PIP_NO_CACHE_DIR=off
+
+%post
+    # Install curl (sometimes needed by dcm2niix) and pigz (to speed up dcm2niix)
+    apt-get update && apt-get -y --no-install-recommends install pigz curl
+
+    # Install the latest stable BIDScoin release from Python repository
+    # NOTE: PyQt5 is installed as Debian package to solve dependencies issues occurring when installed with pip
+    apt-get -y --no-install-recommends install git python3-pyqt5 python3-pyqt5.qtx11extras && apt-get clean
+    pip install --upgrade pip
+    pip install git+https://github.com/Donders-Institute/bidscoin
+
+    # Uncomment the line below if you get errors like: ImportError: libQt5Core.so.5: cannot open shared object file: No such file or directory
+    # strip --remove-section=.note.ABI-tag /usr/lib/x86_64-linux-gnu/libQt5Core.so.5
+
+    # Finally, create the necessary links and cache to the most recent shared libraries (= best practise)
+    ldconfig
+
+%runscript
+    exec bidscoin --help
